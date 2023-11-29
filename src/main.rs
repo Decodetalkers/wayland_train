@@ -6,13 +6,14 @@ use wayland_client::{
     protocol::{
         wl_buffer::WlBuffer,
         wl_compositor::WlCompositor,
+        wl_keyboard,
         wl_output::{self, WlOutput},
-        wl_registry,
+        wl_registry, wl_seat::{self, WlSeat},
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
         wl_surface::WlSurface,
     },
-    Connection, Dispatch, Proxy,
+    Connection, Dispatch, Proxy, WEnum,
 };
 
 use wayland_protocols::xdg::shell::client::{
@@ -114,6 +115,43 @@ impl Dispatch<xdg_surface::XdgSurface, ()> for SecondState {
     }
 }
 
+impl Dispatch<wl_seat::WlSeat, ()> for SecondState {
+    fn event(
+        _state: &mut Self,
+        seat: &wl_seat::WlSeat,
+        event: <wl_seat::WlSeat as Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        qh: &wayland_client::QueueHandle<Self>,
+    ) {
+        if let wl_seat::Event::Capabilities {
+            capabilities: WEnum::Value(capabilities),
+        } = event
+        {
+            if capabilities.contains(wl_seat::Capability::Keyboard) {
+                seat.get_keyboard(qh, ());
+            }
+        }
+    }
+}
+
+impl Dispatch<wl_keyboard::WlKeyboard, ()> for SecondState {
+    fn event(
+        state: &mut Self,
+        _proxy: &wl_keyboard::WlKeyboard,
+        event: <wl_keyboard::WlKeyboard as Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &wayland_client::QueueHandle<Self>,
+    ) {
+        if let wl_keyboard::Event::Key { key, .. } = event {
+            if key == 1 {
+                state.running = false;
+            }
+        }
+    }
+}
+
 delegate_noop!(SecondState: ignore WlCompositor);
 delegate_noop!(SecondState: ignore WlSurface);
 delegate_noop!(SecondState: ignore WlOutput);
@@ -135,6 +173,7 @@ fn main() {
     let wl_surface = wmcompositer.create_surface(&qh, ());
     let xdg_wm_base = globals.bind::<XdgWmBase, _, _>(&qh, 1..=2, ()).unwrap();
     let shm = globals.bind::<WlShm, _, _>(&qh, 1..=1, ()).unwrap();
+    globals.bind::<WlSeat, _, _>(&qh, 1..=1, ()).unwrap();
 
     let _ = connection.display().get_registry(&qh, ());
 
@@ -166,7 +205,7 @@ fn main() {
 
     state.wl_surface = Some(wl_surface);
     state.buffer = Some(buffer);
-    loop {
+    while state.running {
         event_queue.blocking_dispatch(&mut state).unwrap();
     }
 }
