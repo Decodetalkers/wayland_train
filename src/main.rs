@@ -24,7 +24,6 @@ use wayland_protocols::xdg::shell::client::{
 
 struct BaseState;
 
-#[allow(unused)]
 #[derive(Debug)]
 struct SecondState {
     outputs: Vec<wl_output::WlOutput>,
