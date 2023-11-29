@@ -10,7 +10,13 @@ use wayland_client::{
     },
     Connection, Dispatch, Proxy,
 };
-use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
+
+use wayland_protocols::xdg::shell::client::{
+    xdg_surface,
+    xdg_toplevel::XdgToplevel,
+    xdg_wm_base::{self, XdgWmBase},
+};
+
 struct BaseState;
 
 #[allow(unused)]
@@ -80,10 +86,26 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for BaseState {
     }
 }
 
+impl Dispatch<xdg_surface::XdgSurface, ()> for SecondState {
+    fn event(
+        _state: &mut Self,
+        xdg_surface: &xdg_surface::XdgSurface,
+        event: xdg_surface::Event,
+        _: &(),
+        _: &Connection,
+        _: &wayland_client::QueueHandle<Self>,
+    ) {
+        if let xdg_surface::Event::Configure { serial, .. } = event {
+            xdg_surface.ack_configure(serial);
+        }
+    }
+}
+
 delegate_noop!(SecondState: ignore WlCompositor);
 delegate_noop!(SecondState: ignore WlSurface);
 delegate_noop!(SecondState: ignore WlOutput);
 delegate_noop!(SecondState: ignore WlShm);
+delegate_noop!(SecondState: ignore XdgToplevel);
 
 fn main() {
     let connection = Connection::connect_to_env().unwrap();
@@ -101,10 +123,18 @@ fn main() {
 
     let _ = connection.display().get_registry(&qh, ());
 
-    event_queue.roundtrip(&mut state).unwrap();
+    event_queue.blocking_dispatch(&mut state).unwrap();
 
     println!("Hello, world!, {:?}", wl_surface);
     println!("Hello, world!, {:?}", wl_shm);
     println!("Hello, world!, {:?}", xdg_wm_base);
     println!("Hello, world!, {:?}", state);
+    let xdg_surface = xdg_wm_base.get_xdg_surface(&wl_surface, &qh, ());
+    let toplevel = xdg_surface.get_toplevel(&qh, ());
+    toplevel.set_title("EEEE".into());
+    wl_surface.commit();
+
+    loop {
+        event_queue.blocking_dispatch(&mut state).unwrap();
+    }
 }
