@@ -9,12 +9,25 @@ use wayland_client::{
     },
     Connection, Dispatch, Proxy,
 };
+use wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
 struct BaseState;
 
-#[derive(Debug, Default)]
+#[allow(unused)]
+#[derive(Debug)]
 struct SecondState {
     outputs: Vec<wl_output::WlOutput>,
+    running: bool,
 }
+
+impl Default for SecondState {
+    fn default() -> Self {
+        SecondState {
+            outputs: Vec::new(),
+            running: true,
+        }
+    }
+}
+
 impl Dispatch<wl_registry::WlRegistry, ()> for SecondState {
     fn event(
         state: &mut Self,
@@ -39,6 +52,21 @@ impl Dispatch<wl_registry::WlRegistry, ()> for SecondState {
         }
     }
 }
+impl Dispatch<xdg_wm_base::XdgWmBase, ()> for SecondState {
+    fn event(
+        _state: &mut Self,
+        wm_base: &xdg_wm_base::XdgWmBase,
+        event: <xdg_wm_base::XdgWmBase as Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &wayland_client::QueueHandle<Self>,
+    ) {
+        if let xdg_wm_base::Event::Ping { serial } = event {
+            wm_base.pong(serial);
+        }
+    }
+}
+
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for BaseState {
     fn event(
         _state: &mut Self,
@@ -51,31 +79,28 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for BaseState {
     }
 }
 
-delegate_noop!(BaseState: ignore WlCompositor);
+delegate_noop!(SecondState: ignore WlCompositor);
+delegate_noop!(SecondState: ignore WlSurface);
 delegate_noop!(SecondState: ignore WlOutput);
-delegate_noop!(BaseState: ignore WlSurface);
 
 fn main() {
     let connection = Connection::connect_to_env().unwrap();
-    let (globals, event_queue) = registry_queue_init::<BaseState>(&connection).unwrap();
-
-    let qh = event_queue.handle();
-
-    let wmcompositer = globals.bind::<WlCompositor, _, _>(&qh, 1..=5, ()).unwrap();
-
-    let wl_buffer = wmcompositer.create_surface(&qh, ());
+    let (globals, _) = registry_queue_init::<BaseState>(&connection).unwrap();
 
     let mut state = SecondState::default();
 
     let mut event_queue = connection.new_event_queue::<SecondState>();
     let qh = event_queue.handle();
 
+    let wmcompositer = globals.bind::<WlCompositor, _, _>(&qh, 1..=5, ()).unwrap();
+    let wl_buffer = wmcompositer.create_surface(&qh, ());
+    let xdg_wm_base = globals.bind::<XdgWmBase, _, _>(&qh, 1..=2, ()).unwrap();
+
     let _ = connection.display().get_registry(&qh, ());
 
     event_queue.roundtrip(&mut state).unwrap();
 
-    //event_queue.roundtrip(&mut state).unwrap();
-    //event_queue.roundtrip(&mut state).unwrap();
     println!("Hello, world!, {:?}", wl_buffer);
+    println!("Hello, world!, {:?}", xdg_wm_base);
     println!("Hello, world!, {:?}", state);
 }
