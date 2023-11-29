@@ -1,11 +1,15 @@
+use std::{fs::File, os::unix::prelude::AsFd};
+
 use wayland_client::{
     delegate_noop,
     globals::{registry_queue_init, GlobalListContents},
     protocol::{
+        wl_buffer::WlBuffer,
         wl_compositor::WlCompositor,
         wl_output::{self, WlOutput},
         wl_registry,
-        wl_shm::WlShm,
+        wl_shm::{self, WlShm},
+        wl_shm_pool::WlShmPool,
         wl_surface::WlSurface,
     },
     Connection, Dispatch, Proxy,
@@ -24,6 +28,8 @@ struct BaseState;
 struct SecondState {
     outputs: Vec<wl_output::WlOutput>,
     running: bool,
+    wl_surface: Option<WlSurface>,
+    buffer: Option<WlBuffer>,
 }
 
 impl Default for SecondState {
@@ -31,6 +37,8 @@ impl Default for SecondState {
         SecondState {
             outputs: Vec::new(),
             running: true,
+            wl_surface: None,
+            buffer: None,
         }
     }
 }
@@ -88,7 +96,7 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for BaseState {
 
 impl Dispatch<xdg_surface::XdgSurface, ()> for SecondState {
     fn event(
-        _state: &mut Self,
+        state: &mut Self,
         xdg_surface: &xdg_surface::XdgSurface,
         event: xdg_surface::Event,
         _: &(),
@@ -97,6 +105,11 @@ impl Dispatch<xdg_surface::XdgSurface, ()> for SecondState {
     ) {
         if let xdg_surface::Event::Configure { serial, .. } = event {
             xdg_surface.ack_configure(serial);
+            let surface = state.wl_surface.as_ref().unwrap();
+            if let Some(ref buffer) = state.buffer {
+                surface.attach(Some(buffer), 0, 0);
+                surface.commit();
+            }
         }
     }
 }
@@ -106,6 +119,8 @@ delegate_noop!(SecondState: ignore WlSurface);
 delegate_noop!(SecondState: ignore WlOutput);
 delegate_noop!(SecondState: ignore WlShm);
 delegate_noop!(SecondState: ignore XdgToplevel);
+delegate_noop!(SecondState: ignore WlShmPool);
+delegate_noop!(SecondState: ignore WlBuffer);
 
 fn main() {
     let connection = Connection::connect_to_env().unwrap();
@@ -119,22 +134,56 @@ fn main() {
     let wmcompositer = globals.bind::<WlCompositor, _, _>(&qh, 1..=5, ()).unwrap();
     let wl_surface = wmcompositer.create_surface(&qh, ());
     let xdg_wm_base = globals.bind::<XdgWmBase, _, _>(&qh, 1..=2, ()).unwrap();
-    let wl_shm = globals.bind::<WlShm, _, _>(&qh, 1..=1, ()).unwrap();
+    let shm = globals.bind::<WlShm, _, _>(&qh, 1..=1, ()).unwrap();
 
     let _ = connection.display().get_registry(&qh, ());
 
     event_queue.blocking_dispatch(&mut state).unwrap();
 
     println!("Hello, world!, {:?}", wl_surface);
-    println!("Hello, world!, {:?}", wl_shm);
+    println!("Hello, world!, {:?}", shm);
     println!("Hello, world!, {:?}", xdg_wm_base);
     println!("Hello, world!, {:?}", state);
+
     let xdg_surface = xdg_wm_base.get_xdg_surface(&wl_surface, &qh, ());
     let toplevel = xdg_surface.get_toplevel(&qh, ());
     toplevel.set_title("EEEE".into());
     wl_surface.commit();
+    let (init_w, init_h) = (320, 240);
 
+    let mut file = tempfile::tempfile().unwrap();
+    draw(&mut file, (init_w, init_h));
+    let pool = shm.create_pool(file.as_fd(), (init_w * init_h * 4) as i32, &qh, ());
+    let buffer = pool.create_buffer(
+        0,
+        init_w as i32,
+        init_h as i32,
+        (init_w * 4) as i32,
+        wl_shm::Format::Argb8888,
+        &qh,
+        (),
+    );
+
+    state.wl_surface = Some(wl_surface);
+    state.buffer = Some(buffer);
     loop {
         event_queue.blocking_dispatch(&mut state).unwrap();
     }
+}
+
+fn draw(tmp: &mut File, (buf_x, buf_y): (u32, u32)) {
+    use std::{cmp::min, io::Write};
+    let mut buf = std::io::BufWriter::new(tmp);
+    for y in 0..buf_y {
+        for x in 0..buf_x {
+            let a = 0xFF;
+            let r = min(((buf_x - x) * 0xFF) / buf_x, ((buf_y - y) * 0xFF) / buf_y);
+            let g = min((x * 0xFF) / buf_x, ((buf_y - y) * 0xFF) / buf_y);
+            let b = min(((buf_x - x) * 0xFF) / buf_x, (y * 0xFF) / buf_y);
+
+            let color = (a << 24) + (r << 16) + (g << 8) + b;
+            buf.write_all(&color.to_ne_bytes()).unwrap();
+        }
+    }
+    buf.flush().unwrap();
 }
