@@ -24,7 +24,7 @@ use wayland_protocols::xdg::shell::client::{
 };
 use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1::{Layer, ZwlrLayerShellV1},
-    zwlr_layer_surface_v1::{self, Anchor},
+    zwlr_layer_surface_v1::{self, Anchor, ZwlrLayerSurfaceV1},
 };
 
 #[derive(Debug)]
@@ -49,6 +49,23 @@ struct SecondState {
     running: bool,
     wl_surface: Option<WlSurface>,
     buffer: Option<WlBuffer>,
+    layer_shell: Option<ZwlrLayerSurfaceV1>,
+}
+
+impl SecondState {
+    fn is_layer_shell(&self) -> bool {
+        self.layer_shell.is_some()
+    }
+
+    fn set_anchor(&self, anchor: Anchor) {
+        if !self.is_layer_shell() {
+            return;
+        }
+        let layer_shell = self.layer_shell.as_ref().unwrap();
+        let surface = self.wl_surface.as_ref().unwrap();
+        layer_shell.set_anchor(anchor);
+        surface.commit();
+    }
 }
 
 impl Default for SecondState {
@@ -58,6 +75,7 @@ impl Default for SecondState {
             running: true,
             wl_surface: None,
             buffer: None,
+            layer_shell: None,
         }
     }
 }
@@ -162,7 +180,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for SecondState {
 
 impl Dispatch<wl_pointer::WlPointer, ()> for SecondState {
     fn event(
-        _state: &mut Self,
+        state: &mut Self,
         _proxy: &wl_pointer::WlPointer,
         event: <wl_pointer::WlPointer as Proxy>::Event,
         _data: &(),
@@ -170,7 +188,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for SecondState {
         _qhandle: &wayland_client::QueueHandle<Self>,
     ) {
         if let wl_pointer::Event::Button { .. } = event {
-            println!("button");
+            state.set_anchor(Anchor::Bottom);
         }
     }
 }
@@ -262,6 +280,7 @@ fn main() {
         layer.set_anchor(Anchor::Bottom | Anchor::Right | Anchor::Left | Anchor::Top);
         layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::OnDemand);
         layer.set_size(init_w, init_w);
+        state.layer_shell = Some(layer);
     } else {
         let xdg_wm_base = globals.bind::<XdgWmBase, _, _>(&qh, 1..=2, ()).unwrap();
         let xdg_surface = xdg_wm_base.get_xdg_surface(&wl_surface, &qh, ());
