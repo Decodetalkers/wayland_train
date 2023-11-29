@@ -8,7 +8,8 @@ use wayland_client::{
         wl_compositor::WlCompositor,
         wl_keyboard,
         wl_output::{self, WlOutput},
-        wl_registry, wl_seat::{self, WlSeat},
+        wl_registry,
+        wl_seat::{self, WlSeat},
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
         wl_surface::WlSurface,
@@ -20,6 +21,10 @@ use wayland_protocols::xdg::shell::client::{
     xdg_surface,
     xdg_toplevel::XdgToplevel,
     xdg_wm_base::{self, XdgWmBase},
+};
+use wayland_protocols_wlr::layer_shell::v1::client::{
+    zwlr_layer_shell_v1::{Layer, ZwlrLayerShellV1},
+    zwlr_layer_surface_v1::{self, Anchor},
 };
 
 struct BaseState;
@@ -151,6 +156,26 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for SecondState {
     }
 }
 
+impl Dispatch<zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, ()> for SecondState {
+    fn event(
+        state: &mut Self,
+        surface: &zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+        event: <zwlr_layer_surface_v1::ZwlrLayerSurfaceV1 as Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &wayland_client::QueueHandle<Self>,
+    ) {
+        if let zwlr_layer_surface_v1::Event::Configure { serial, .. } = event {
+            surface.ack_configure(serial);
+            let surface = state.wl_surface.as_ref().unwrap();
+            if let Some(ref buffer) = state.buffer {
+                surface.attach(Some(buffer), 0, 0);
+                surface.commit();
+            }
+        }
+    }
+}
+
 delegate_noop!(SecondState: ignore WlCompositor);
 delegate_noop!(SecondState: ignore WlSurface);
 delegate_noop!(SecondState: ignore WlOutput);
@@ -158,6 +183,7 @@ delegate_noop!(SecondState: ignore WlShm);
 delegate_noop!(SecondState: ignore XdgToplevel);
 delegate_noop!(SecondState: ignore WlShmPool);
 delegate_noop!(SecondState: ignore WlBuffer);
+delegate_noop!(SecondState: ignore ZwlrLayerShellV1);
 
 fn main() {
     let connection = Connection::connect_to_env().unwrap();
@@ -183,9 +209,26 @@ fn main() {
     println!("Hello, world!, {:?}", xdg_wm_base);
     println!("Hello, world!, {:?}", state);
 
-    let xdg_surface = xdg_wm_base.get_xdg_surface(&wl_surface, &qh, ());
-    let toplevel = xdg_surface.get_toplevel(&qh, ());
-    toplevel.set_title("EEEE".into());
+    if true {
+        let layer_shell = globals
+            .bind::<ZwlrLayerShellV1, _, _>(&qh, 3..=4, ())
+            .unwrap();
+        let layer = layer_shell.get_layer_surface(
+            &wl_surface,
+            None,
+            Layer::Top,
+            "nobody".to_owned(),
+            &qh,
+            (),
+        );
+        layer.set_anchor(Anchor::Bottom | Anchor::Right | Anchor::Left | Anchor::Top);
+        layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::OnDemand);
+        layer.set_size(320, 240);
+    } else {
+        let xdg_surface = xdg_wm_base.get_xdg_surface(&wl_surface, &qh, ());
+        let toplevel = xdg_surface.get_toplevel(&qh, ());
+        toplevel.set_title("EEEE".into());
+    }
     wl_surface.commit();
     let (init_w, init_h) = (320, 240);
 
