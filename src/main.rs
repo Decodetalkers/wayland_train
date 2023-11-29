@@ -176,14 +176,17 @@ impl Dispatch<zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, ()> for SecondState {
     }
 }
 
-delegate_noop!(SecondState: ignore WlCompositor);
-delegate_noop!(SecondState: ignore WlSurface);
-delegate_noop!(SecondState: ignore WlOutput);
-delegate_noop!(SecondState: ignore WlShm);
-delegate_noop!(SecondState: ignore XdgToplevel);
-delegate_noop!(SecondState: ignore WlShmPool);
-delegate_noop!(SecondState: ignore WlBuffer);
-delegate_noop!(SecondState: ignore ZwlrLayerShellV1);
+delegate_noop!(SecondState: ignore WlCompositor); // WlCompositor is need to create a surface
+delegate_noop!(SecondState: ignore WlSurface); // surface is the base needed to show buffer
+delegate_noop!(SecondState: ignore WlOutput); // output is need to place layer_shell, although here
+                                              // it is not used
+delegate_noop!(SecondState: ignore WlShm); // shm is used to create buffer pool
+delegate_noop!(SecondState: ignore XdgToplevel); // so it is the same with layer_shell, private a
+                                                 // place for surface
+delegate_noop!(SecondState: ignore WlShmPool); // so it is pool, created by wl_shm
+delegate_noop!(SecondState: ignore WlBuffer); // buffer show the picture
+delegate_noop!(SecondState: ignore ZwlrLayerShellV1); // it is simillar with xdg_toplevel, also the
+                                                      // ext-session-shell
 
 fn main() {
     let connection = Connection::connect_to_env().unwrap();
@@ -196,7 +199,7 @@ fn main() {
 
     let wmcompositer = globals.bind::<WlCompositor, _, _>(&qh, 1..=5, ()).unwrap();
     let wl_surface = wmcompositer.create_surface(&qh, ());
-    let xdg_wm_base = globals.bind::<XdgWmBase, _, _>(&qh, 1..=2, ()).unwrap();
+
     let shm = globals.bind::<WlShm, _, _>(&qh, 1..=1, ()).unwrap();
     globals.bind::<WlSeat, _, _>(&qh, 1..=1, ()).unwrap();
 
@@ -206,10 +209,10 @@ fn main() {
 
     println!("Hello, world!, {:?}", wl_surface);
     println!("Hello, world!, {:?}", shm);
-    println!("Hello, world!, {:?}", xdg_wm_base);
     println!("Hello, world!, {:?}", state);
 
     if true {
+        // this example is ok for both xdg_surface and layer_shell
         let layer_shell = globals
             .bind::<ZwlrLayerShellV1, _, _>(&qh, 3..=4, ())
             .unwrap();
@@ -225,10 +228,12 @@ fn main() {
         layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::OnDemand);
         layer.set_size(320, 240);
     } else {
+        let xdg_wm_base = globals.bind::<XdgWmBase, _, _>(&qh, 1..=2, ()).unwrap();
         let xdg_surface = xdg_wm_base.get_xdg_surface(&wl_surface, &qh, ());
         let toplevel = xdg_surface.get_toplevel(&qh, ());
         toplevel.set_title("EEEE".into());
     }
+
     wl_surface.commit();
     let (init_w, init_h) = (320, 240);
 
