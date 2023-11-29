@@ -5,6 +5,7 @@ use wayland_client::{
         wl_compositor::WlCompositor,
         wl_output::{self, WlOutput},
         wl_registry,
+        wl_shm::WlShm,
         wl_surface::WlSurface,
     },
     Connection, Dispatch, Proxy,
@@ -82,6 +83,7 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for BaseState {
 delegate_noop!(SecondState: ignore WlCompositor);
 delegate_noop!(SecondState: ignore WlSurface);
 delegate_noop!(SecondState: ignore WlOutput);
+delegate_noop!(SecondState: ignore WlShm);
 
 fn main() {
     let connection = Connection::connect_to_env().unwrap();
@@ -93,14 +95,16 @@ fn main() {
     let qh = event_queue.handle();
 
     let wmcompositer = globals.bind::<WlCompositor, _, _>(&qh, 1..=5, ()).unwrap();
-    let wl_buffer = wmcompositer.create_surface(&qh, ());
+    let wl_surface = wmcompositer.create_surface(&qh, ());
     let xdg_wm_base = globals.bind::<XdgWmBase, _, _>(&qh, 1..=2, ()).unwrap();
+    let wl_shm = globals.bind::<WlShm, _, _>(&qh, 1..=1, ()).unwrap();
 
     let _ = connection.display().get_registry(&qh, ());
 
     event_queue.roundtrip(&mut state).unwrap();
 
-    println!("Hello, world!, {:?}", wl_buffer);
+    println!("Hello, world!, {:?}", wl_surface);
+    println!("Hello, world!, {:?}", wl_shm);
     println!("Hello, world!, {:?}", xdg_wm_base);
     println!("Hello, world!, {:?}", state);
 }
