@@ -8,7 +8,7 @@ use wayland_client::{
         wl_compositor::WlCompositor,
         wl_keyboard,
         wl_output::{self, WlOutput},
-        wl_registry,
+        wl_pointer, wl_registry,
         wl_seat::{self, WlSeat},
         wl_shm::{self, WlShm},
         wl_shm_pool::WlShmPool,
@@ -136,6 +136,9 @@ impl Dispatch<wl_seat::WlSeat, ()> for SecondState {
             if capabilities.contains(wl_seat::Capability::Keyboard) {
                 seat.get_keyboard(qh, ());
             }
+            if capabilities.contains(wl_seat::Capability::Pointer) {
+                seat.get_pointer(qh, ());
+            }
         }
     }
 }
@@ -153,6 +156,21 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for SecondState {
             if key == 1 {
                 state.running = false;
             }
+        }
+    }
+}
+
+impl Dispatch<wl_pointer::WlPointer, ()> for SecondState {
+    fn event(
+        _state: &mut Self,
+        _proxy: &wl_pointer::WlPointer,
+        event: <wl_pointer::WlPointer as Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &wayland_client::QueueHandle<Self>,
+    ) {
+        if let wl_pointer::Event::Button { .. } = event {
+            println!("button");
         }
     }
 }
